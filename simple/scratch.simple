@@ -1,0 +1,115 @@
+(load-file "simple/core.simple")
+
+(expander/macroexpand (or '(or 1)))
+(expander/expand (or '(or 1)))
+(expander/macroexpand (or '(or 1 2 3)))
+(expander/expand (or '(or 1 2 3)))
+
+(or 1 2 3)
+(or #f #f #t)
+
+(define wtf1 '(cond (#f 0) (#t 1)))
+(define wtf2 (list 'cond (list #f 0) (list #t 1)))
+(prn wtf1)
+(prn wtf2)
+
+(cond* (list 'cond (list #f 0) (list #t 1)))
+
+(or* '(or 1 2 3))
+(expander/macroexpand (or* '(or 1 2 3)))
+(expander/expand (or* '(or 1 2 3)))
+
+(or* '(or "A" "B"))
+(expander/macroexpand (or* '(or "A" "B")))
+
+(or* '(or 1))
+(expander/macroexpand (or* '(or 1)))
+
+(expander/macroexpand '(cond (#f 0) (#t 1)))
+(expander/expand '(cond (#f 0) (#t 1)))
+(cond (#f 0) (#t 1))
+
+(define b 42);
+(expander/quasiquote '(a b c))
+(expander/quasiquote '(a (b c d) e))
+(expander/quasiquote '(a ~b c))
+(expander/quasiquote '(a ~@'(b c d) e))
+
+`(a b c)
+`(a (b c d) e)
+`(a ~b c)
+`(a ~@'(b c d) e f)
+(partition 2 `(a ~@'(b c d) e f))
+;@(debug)
+;@(annotate :foo :bar)
+
+; priority #1 is to write a compiler to replace the interpreter
+; some form of pattern matching would go a long long way to writing a compiler
+; so lets give that a go
+
+; let's define the match interface
+; a match produces a binding or a failure
+; so it makes sense to pipe an environment map through the matching process
+
+(define (bind env sym val)
+  (cons [sym val] env))
+
+(define (match p x y)
+  (prn p)
+  (prn (symbol? p))
+  (cond
+    ((symbol? p)
+      (match-symbol p x y))
+    ((array? p) 
+      `(if (array? ~x) 
+        ~(match-array p x y) 
+        :match/fail))
+    ((list? p)
+      `(if (list? ~x) 
+        ~(match-list p x y) 
+        :match/fail))
+    (#t
+      (match-val p x y))))
+
+(define (match-val p x y)
+  (if (eq? p x) y :match/fail))
+
+(define (match-symbol p x y)
+  `(let (~p ~x) ~y))
+
+(define (match-array p x y)
+  (define len p.length)
+  `(do
+    (define #len (aget ~x "length"))
+    (if (eq? ~len #len)
+      ~(match-array* p x y 0 len)
+      :match/failure)))
+
+(define (match-array* p x y i len) y)
+(define (match-list p x y) y)
+
+(match 'a 42 '(prn a))
+(match '[a b c] [1 2 3] '(prn a b c))
+(match-symbol 'a 42 '(prn a))
+
+(define wtf '(define (match p x y)
+  (prn p)
+  (prn (symbol? p))
+  (cond
+    (symbol? p) 
+    (match-symbol p x y)
+    
+    (array? p) 
+      `(if (array? ~x) 
+        ~(match-array p x y) 
+        :match/fail)
+    
+    (list? p)
+    `(if (list? ~x) 
+      ~(match-list p x y) 
+      :match/fail)
+    
+    #t
+    (match-val p x y))))
+
+(prn (expander/expand wtf))

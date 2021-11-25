@@ -1,0 +1,161 @@
+(define (inc x) (+ x 1))
+(define (dec x) (- x 1))
+(define (identity x) x)
+(define (second xs) (first (rest xs)))
+(define (truthy? x) (if x #t #f))
+(define (not x) (if x #f #t))
+(define (not-empty? xs) (not (empty? xs)))
+(define (quote* x) (if (list? x) (list 'quote x) x))
+
+(define (define-macro term)
+  (define params (first (rest term)))
+  (define body (rest (rest term)))
+  (define name (first params))
+  (define args (rest params))
+  (define ?helper (gensym "helper"))
+  (define ?wrapper (gensym "wrapper"))
+  (define ?term (gensym "term"))
+  `(do 
+    (define (~?helper ~@args) ~@body)
+    (define (~name ~?term)
+      (apply ~?helper (rest ~?term)))
+    (set-macro! ~name)))
+
+(set-macro! define-macro)
+
+(define-macro (when test : body)
+  `(if ~test (do ~@body) #nil))
+
+(define-macro (debug form)
+  (define ?res (gensym "res"))
+  `(do
+    (notify (list :debug '~form))
+    (prn (expander/macroexpand `~form))
+    (define ?res ~form)
+    (prn ?res)
+    ~form))
+
+(define-macro (cond : forms)
+  (define a (first forms))
+  (define b (first (rest forms)))
+  (define more (rest (rest forms)))
+  (if (empty? forms)
+    #f
+    `(if ~a ~b (cond ~@more))))
+ 
+(define-macro (or : forms)
+  (define ?or (gensym "or"))
+  (if (empty? forms)
+    #f
+    `(let (~?or ~(first forms))
+      (if ~?or ~?or (or ~@(rest forms))))))
+
+(define-macro (and : forms)
+  (define ?and (gensym "and"))
+  (cond 
+    (empty? forms) #t
+    (empty? (rest forms)) (first forms)
+    :else 
+    `(let (~?and ~(first forms))
+      (if ~?and 
+        (and ~@(rest forms)) 
+        ~?and))))
+
+(define (any? pred seq)
+  (if (empty? seq) 
+    #f 
+    (or (pred (first seq)) 
+        (any? pred (rest seq)))))
+
+(define (sentinel? x) (== x :))
+
+(define (match pat in ok fail)
+  (cond
+    (not (symbol? in))
+    (let (in* (gensym "in"))
+      `(let (~in* ~in)
+        ~(match pat in* ok fail)))
+
+    (symbol? pat) (match-symbol pat in ok fail)
+    (list? pat)   (match-list pat in ok fail)
+    (array? pat)  (match-array pat in ok fail)
+    :else         (match-val pat in ok fail)))
+
+(define (match-val pat in ok fail)
+  (define ?val (gensym "val"))
+  `(let (~?val ~pat)
+    (if (== ~?val ~in)
+      ~ok
+      ~fail)))
+
+(define (match-symbol pat in ok fail)
+  `(let (~pat ~in) ~ok))
+
+(define (match-list pat in ok fail)
+  `(if (list? ~in)
+    ~(match-list* pat in ok fail)
+    ~fail))
+
+(define (match-list* pat in ok fail)
+ (if (empty? pat) 
+  `(if (empty? ~in) ~ok ~fail)
+   (let* (head (first pat) 
+          tail (rest pat)
+          ?head (gensym "head")
+          ?next (gensym "next")
+          ok* `(let (~?next (rest ~in))
+               ~(match (rest pat) ?next ok fail)))
+    `(let (~?head (first ~in))
+      ~(match (first pat) ?head ok* fail)))))
+
+(define (match-array pat in ok fail)
+  `(if (and (array? ~in) (== ~(aget pat "length") (aget ~in "length")))
+    ~(match-array* pat in ok fail 0)
+    ~fail))
+
+(define (match-array* pat in ok fail i)
+  (if (== (aget pat "length") i) 
+    ok
+    (let* (x   (gensym "x")
+           ok* (match-array* pat in ok fail (inc i)))
+      `(let (~x (aget ~in ~i))
+        ~(match (aget pat i) x ok* fail)))))
+
+(define (match-patterns clauses in)
+  (define ?in (gensym "in"))
+  `(let (~?in ~in)
+    ~(match-patterns* clauses ?in)))
+
+(define (match-patterns* clauses in)
+  (when (not-empty? clauses)
+    (define pat (first clauses))
+    (define ok (second clauses))
+    (define fail (match-patterns* (rest (rest clauses)) in))
+    (match pat in ok fail)))
+
+(debug (match 'a 42 '(* a a) #f))
+(debug (match 1 1 #t #f))
+(debug (match 1 2 #t #f))
+(debug (match '(a b c) '(1 2 3) '(* a b c) #f))
+(debug (match '(a b 42) '(1 2 3) '(* a b) #f))
+(debug (match '[a b c] '[1 2 3] '(* a b c) #f))
+
+(debug (match-patterns '(() "zero" (_) "one" (_ _) ("two") _ "more-than-two") '(1 2 3 4 5)))
+
+(define-macro (define/match name : patterns)
+  (define matcher (gensym "matcher"))
+  (define in (gensym "in"))
+  `(do
+    (define (~matcher ~in) ~(match-patterns patterns in))
+    (define (~name : ~in) (~matcher ~in))))
+
+(define/match silly
+  ()    :zero
+  (_)   :one
+  (_ _) :two
+  _     :more-than-two)
+
+(debug (silly))
+(debug (silly 1))
+(debug (silly 1 2))
+(debug (silly 1 2 3))
