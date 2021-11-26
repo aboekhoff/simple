@@ -52,8 +52,26 @@ function show(x) {
   return `#<${type}${kvs.length ? ' ' + kvs.map(show).join(' ') : ''}>`;
 };
 
+function prstr(...xs) {
+  return withStringPort(() => pr(...xs));
+}
+
 function pr(...xs) {
   write(...xs.map(show));
+}
+
+function print(...xs) {
+  for (x of xs) {
+    if (typeof x === 'string') {
+      write(x)
+    } else {
+      write(show(x));
+    }
+  }
+}
+
+function printstr(...xs) {
+  return withStringPort(() => print(...xs));
 }
 
 function prn(...xs) {
@@ -75,4 +93,16 @@ function notify(...xs) {
   prn();
 }
 
-module.exports = { show, prn, warn, notify, getOutputPort, setOutputPort, withStringPort };
+module.exports = { 
+  show, 
+  prstr, 
+  pr, 
+  prn, 
+  print, 
+  printstr,
+  warn, 
+  notify, 
+  getOutputPort, 
+  setOutputPort, 
+  withStringPort 
+};

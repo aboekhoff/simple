@@ -230,27 +230,13 @@
 
     v (k v)))
 
-@(debug)
-(match 'if
-  'if :ok
-  _   :wtf)
-
-@(debug)
-(normalize-term '(do 1 2 3))
-
-@(debug)
-(normalize-term 42)
-
-@(debug)
-(normalize-term '(if 1 2 3))
-
 (define (directify-term term)
   (directify term '()))
 
 (define (directify term out)
   (match term
     ('let (name expr) in)
-    (cons [:set! name expr] (directify in out))
+    (cons [:set! name (first (directify-term expr))] (directify in out))
     
     ('fn* params restparam body)
     (let (ret (gensym "ret"))
@@ -273,36 +259,46 @@
     _ out))
 
 (define (emit term)
-  )
+  (with-string-port (fn () (emit* term))))
 
 (define/match emit*
-  [:fn params restparam body]
-  (do
-    (pr "function (")
-    (pr (.join (->array params) ", "))
-    (pr ") {\n")
-    (emit body)
-    (pr "\n}))
+  () #nil
 
-  [:set! x y]
+  (term : terms)
   (do
-    (pr x)
-    (pr " = ")
-    (pr y)
-    (pr " ;\n"))
+    (emit* term)
+    (emit* terms))
 
-  [:app f args]
+  [':fn params restparam body]
   (do
-    (pr f)
-    (pr "(")
-    (pr (.join (->array args) ", "))
-    (pr ")"))
+    (print "function (")
+    (print (str/join "," params))
+    (print ") {\n")
+    (emit* body)
+    (print "\n}"))
 
-  [:return x]
+  [':set! x y]
   (do
-    (pr "return ")
-    (pr x)
-    (pr ";"))
+    (emit* x)
+    (print " = ")
+    (emit* y)
+    (print ";\n"))
+
+  [':app f args]
+  (do
+    (emit* f)
+    (print "(")
+    (print (str/join ", " args))
+    (print ")"))
+
+  [':return x]
+  (do
+    (print "return ")
+    (emit* x)
+    (print ";"))
+
+  any
+  (print any))
 
 (define (test form)
   @(debug)
@@ -319,3 +315,9 @@
 (test '(do (do (do (prn :woot)))))
 (test '(define* x 42))
 (test '(fn* (x) #nil (* x x)))
+
+@(debug)
+(prstr '(a b c))
+
+@(debug)
+(emit [:app 'f '(a b c)])

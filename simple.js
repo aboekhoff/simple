@@ -1,6 +1,6 @@
 const { list, List } = require('./list');
 const { gensym, symbol, isSymbol } = require('./symbol');
-const { show, prn, notify, warn, withStringPort } = require('./printer');
+const { show, notify, warn, pr, prn, print, printstr, prstr, withStringPort } = require('./printer');
 const { Reader } = require('./reader');
 const { defaultEnv, expand, macroexpand, quasiquote } = require('./expander');
 const { eval } = require('./interpreter');
@@ -11,15 +11,23 @@ init({
   'js/function': Function,
   '*runtime*': RT,
   '*env*': defaultEnv(),
+  '*out*': process.stdout,
   'expander/expand': expand,
   'expander/macroexpand': macroexpand,
   'expander/quasiquote': quasiquote,
   'with-string-port': withStringPort,
   eval,
   show,
+  pr,
   prn,
+  prstr,
+  print,
+  printstr,
   notify,
   warn,
+  'str/join': function(sep, xs) {
+    return [...xs].map((x) => prstr(x)).join(sep);
+  },
   dict: function(...pairs) {
     const dict = new Map();
     for (pair of pairs) {
