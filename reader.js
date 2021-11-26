@@ -39,6 +39,10 @@ class Reader {
     return this.input[this.offset];
   }
 
+  peek2() {
+    return this.input[this.offset+1];
+  }
+
   pop() {
     if (this.peek() === '\n' || this.peek() === '\r') {
       this.line++;
@@ -95,6 +99,10 @@ class Reader {
     this.skipWhitespace();
     const pos = this.getPosition();
     switch (this.peek()) {
+      case '@':
+        if (this.peek2() === '(') {
+          return this.readDecorator();
+        }
       case '"':
         return this.readString();
       case '(':
@@ -114,6 +122,13 @@ class Reader {
       default:
         return this.readSymbol();
     }
+  }
+
+  readDecorator() {
+    this.pop();
+    const outer = this.readSequence('(', ')', x => x);
+    const inner = this.readSexp();
+    return List.from([outer[0], outer.slice(1), inner]); 
   }
 
   readQuote() {

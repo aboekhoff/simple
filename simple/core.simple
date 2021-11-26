@@ -1,12 +1,3 @@
-(define (inc x) (+ x 1))
-(define (dec x) (- x 1))
-(define (identity x) x)
-(define (second xs) (first (rest xs)))
-(define (truthy? x) (if x #t #f))
-(define (not x) (if x #f #t))
-(define (not-empty? xs) (not (empty? xs)))
-(define (quote* x) (if (list? x) (list 'quote x) x))
-
 (define (define-macro term)
   (define params (first (rest term)))
   (define body (rest (rest term)))
@@ -26,11 +17,10 @@
 (define-macro (when test : body)
   `(if ~test (do ~@body) #nil))
 
-(define-macro (debug form)
+(define-macro (debug _ form)
   (define ?res (gensym "res"))
   `(do
     (notify (list :debug '~form))
-    (prn (expander/macroexpand `~form))
     (define ?res ~form)
     (prn ?res)
     ~form))
@@ -61,25 +51,37 @@
         (and ~@(rest forms)) 
         ~?and))))
 
+(define (inc x) (+ x 1))
+(define (dec x) (- x 1))
+(define (identity x) x)
+(define (second xs) (first (rest xs)))
+(define (truthy? x) (if x #t #f))
+(define (not x) (if x #f #t))
+(define (not-empty? xs) (not (empty? xs)))
+(define (sentinel? x) (== x :))
+(define (quote? x) (and (list? x) (== 'quote (first x))))
+
 (define (any? pred seq)
   (if (empty? seq) 
     #f 
     (or (pred (first seq)) 
         (any? pred (rest seq)))))
 
-(define (sentinel? x) (== x :))
-
-(define (match pat in ok fail)
+(define (match-pat pat in ok fail)
   (cond
     (not (symbol? in))
     (let (in* (gensym "in"))
       `(let (~in* ~in)
-        ~(match pat in* ok fail)))
+        ~(match-pat pat in* ok fail)))
 
+    (quote? pat)  (match-quote pat in ok fail)
     (symbol? pat) (match-symbol pat in ok fail)
     (list? pat)   (match-list pat in ok fail)
     (array? pat)  (match-array pat in ok fail)
     :else         (match-val pat in ok fail)))
+
+(define (match-quote pat in ok fail)
+  `(if (== '~(second pat) ~in) ~ok ~fail))
 
 (define (match-val pat in ok fail)
   (define ?val (gensym "val"))
@@ -97,16 +99,22 @@
     ~fail))
 
 (define (match-list* pat in ok fail)
- (if (empty? pat) 
-  `(if (empty? ~in) ~ok ~fail)
-   (let* (head (first pat) 
+  (cond
+    (empty? pat)    
+    `(if (empty? ~in) ~ok ~fail)
+
+    (sentinel? (first pat)) 
+    (match-pat (first (rest pat)) in ok fail)
+
+    #t 
+    (let* (head (first pat) 
           tail (rest pat)
           ?head (gensym "head")
           ?next (gensym "next")
           ok* `(let (~?next (rest ~in))
-               ~(match (rest pat) ?next ok fail)))
+               ~(match-pat (rest pat) ?next ok fail)))
     `(let (~?head (first ~in))
-      ~(match (first pat) ?head ok* fail)))))
+      ~(match-pat (first pat) ?head ok* fail))))) 
 
 (define (match-array pat in ok fail)
   `(if (and (array? ~in) (== ~(aget pat "length") (aget ~in "length")))
@@ -119,7 +127,7 @@
     (let* (x   (gensym "x")
            ok* (match-array* pat in ok fail (inc i)))
       `(let (~x (aget ~in ~i))
-        ~(match (aget pat i) x ok* fail)))))
+        ~(match-pat (aget pat i) x ok* fail)))))
 
 (define (match-patterns clauses in)
   (define ?in (gensym "in"))
@@ -130,32 +138,184 @@
   (when (not-empty? clauses)
     (define pat (first clauses))
     (define ok (second clauses))
-    (define fail (match-patterns* (rest (rest clauses)) in))
-    (match pat in ok fail)))
+    (define res (gensym "res"))
+    (define next (match-patterns* (rest (rest clauses)) in))
+    `(let (~res ~(match-pat pat in ok :match/match-failure))
+      (if (== ~res :match/match-failure)
+        ~next
+        ~res))))
 
-(debug (match 'a 42 '(* a a) #f))
-(debug (match 1 1 #t #f))
-(debug (match 1 2 #t #f))
-(debug (match '(a b c) '(1 2 3) '(* a b c) #f))
-(debug (match '(a b 42) '(1 2 3) '(* a b) #f))
-(debug (match '[a b c] '[1 2 3] '(* a b c) #f))
-
-(debug (match-patterns '(() "zero" (_) "one" (_ _) ("two") _ "more-than-two") '(1 2 3 4 5)))
-
-(define-macro (define/match name : patterns)
+; defines a variadic function that matches on its arguments
+(define-macro (define/match* name : patterns)
   (define matcher (gensym "matcher"))
   (define in (gensym "in"))
   `(do
     (define (~matcher ~in) ~(match-patterns patterns in))
     (define (~name : ~in) (~matcher ~in))))
 
-(define/match silly
-  ()    :zero
-  (_)   :one
-  (_ _) :two
-  _     :more-than-two)
+; defines a 1-argument function that matches on its argument
+(define-macro (define/match name : patterns)
+  (define matcher (gensym "matcher"))
+  (define in (gensym "in"))
+  `(do
+    (define (~matcher ~in) ~(match-patterns patterns in))
+    (define (~name ~in) (~matcher ~in))))
 
-(debug (silly))
-(debug (silly 1))
-(debug (silly 1 2))
-(debug (silly 1 2 3))
+(define-macro (match in : patterns)
+  (match-patterns patterns in))
+
+(define (atomic? x)
+  (not (or (list? x) (array? x))))
+
+(define (normalize-term m) 
+  (normalize m identity))
+
+(define (normalize-name m k)
+  (normalize m (fn (n)
+    (if (atomic? n)
+      (k n)
+      (let (t (gensym "t"))
+        `(let (~t ~n) ~(k t)))))))
+
+(define (normalize-name* m* k)
+  (if (empty? m*)
+    (k ())
+    (normalize-name (first m*) (fn (t)
+      (normalize-name* (rest m*) (fn (t*)
+        (k (cons t t*))))))))
+
+(define (normalize m k)
+  (match m
+    ('fn* params restparam body)
+    (k `(fn* ~params ~restparam ~(normalize-term body)))
+ 
+    (('fn* () #nil : body))
+    (normalize `(do ~@body) k)
+
+    (('fn* () restparam : body) : args)
+    (normalize-name* args (fn (args*)
+      `(let (~restparam (list ~@args*))
+        ~(normalize `(do ~@body) k))))
+    
+    (('fn* (x : xs) restparam : body) arg : args)
+    (normalize-name arg (fn (n)
+      `(let (~x ~n)
+        ~(normalize `((fn* ~xs ~restparam ~@body) ~@args) k))))
+
+    ('if test then else)
+    (normalize-name test (fn (t)
+      (k `(if ~t ~(normalize-term then) ~(normalize-term else)))))
+
+    ('do ('do : xs) : ys)
+    (normalize `(do ~@xs ~@ys) k)
+
+    ('do x)
+    (k (normalize-term x))
+
+    ('do x : xs)
+    (normalize-name x (fn (_)
+      (normalize `(do ~@xs) k)))
+
+    ('quote x)
+    (normalize-name x (fn (t)
+      (k t)))
+
+    ('define* name expr)
+    (k `(define* ~name ~(normalize-term expr)))
+
+    (f : xs)
+    (normalize-name f (fn (f*)
+      (normalize-name* xs (fn (xs*)
+        (k `(~f* ~@xs*))))))
+
+    v (k v)))
+
+@(debug)
+(match 'if
+  'if :ok
+  _   :wtf)
+
+@(debug)
+(normalize-term '(do 1 2 3))
+
+@(debug)
+(normalize-term 42)
+
+@(debug)
+(normalize-term '(if 1 2 3))
+
+(define (directify-term term)
+  (directify term '()))
+
+(define (directify term out)
+  (match term
+    ('let (name expr) in)
+    (cons [:set! name expr] (directify in out))
+    
+    ('fn* params restparam body)
+    (let (ret (gensym "ret"))
+      (cons 
+        [:fn params restparam (directify `(let (ret ~body) ret) (list [:return 'ret]))] 
+        out))
+
+    ('define* name expr)
+    (cons [:set! name expr] out)
+
+    ('do x)
+    (directify x out)
+
+    ('do x : xs)
+    (directify x (directify `(do ~@xs) out))
+
+    (f : xs)
+    (cons [:app f xs] out)
+
+    _ out))
+
+(define (emit term)
+  )
+
+(define/match emit*
+  [:fn params restparam body]
+  (do
+    (pr "function (")
+    (pr (.join (->array params) ", "))
+    (pr ") {\n")
+    (emit body)
+    (pr "\n}))
+
+  [:set! x y]
+  (do
+    (pr x)
+    (pr " = ")
+    (pr y)
+    (pr " ;\n"))
+
+  [:app f args]
+  (do
+    (pr f)
+    (pr "(")
+    (pr (.join (->array args) ", "))
+    (pr ")"))
+
+  [:return x]
+  (do
+    (pr "return ")
+    (pr x)
+    (pr ";"))
+
+(define (test form)
+  @(debug)
+  (define normalized (normalize-term form))
+  @(debug)
+  (define directified (directify-term normalized))
+  @(debug)
+  (define emitted (emit directified)))
+
+(test '(f (g (if z 1 2) y)))
+(test '((fn* () #nil :woot)))
+(test '((fn* (x) #nil x) :woot))
+(test '((fn* (x y) foo (* x y)) 1 2 3 4 5))
+(test '(do (do (do (prn :woot)))))
+(test '(define* x 42))
+(test '(fn* (x) #nil (* x x)))

@@ -1,6 +1,7 @@
 const { isSymbol, symbol, gensym } = require('./symbol');
 const { List, isList, list } = require('./list');
 const { prn, warn, notify, show } = require('./printer');
+const { isMacro } = require('./macro');
 const { RT } = require('./runtime');
 const {
   DO, 
@@ -11,7 +12,6 @@ const {
   AGET,
   LET,
   LET_STAR,
-  DEFINE_MACRO,
   DEFINE,
   DEFINE_STAR,
   QUASIQUOTE,
@@ -33,19 +33,8 @@ const SPECIAL_FORMS = [
   SET_MACRO_BANG,
 ];
 
-function Macro(symbol) {
-  if (!(this instanceof Macro)) {
-    return new Macro(symbol);
-  }
-  this.symbol = symbol;
-}
-
-function isMacro(obj) {
-  return obj instanceof Macro;
-}
-
 // built in macros and special-form designations
-// any symbol that resolves to a function designates a macro
+// any symbol that resolves to a Macro object designates a macro
 // any symbol that resolves to a string designates a special form
 function defaultEnv() {
   const e = new Map();
@@ -69,7 +58,7 @@ function defaultEnv() {
   });
   e.set(FN, ([...t], e) => {
     const { params, restparam } = parseFnParams(t[1]);
-    return list(FN, params, restparam, list(DO, ...t.slice(2)));
+    return list(FN_STAR, params, restparam, list(DO, ...t.slice(2)));
   });
   e.set(DEFINE, ([...t], e) => {
     if (isList(t[1])) {
@@ -215,12 +204,7 @@ function expandSpecialForm(specialForm, [...args], e) {
     case DEFINE_STAR:
       return List.from([DEFINE_STAR, args[0], expand(args[1], e)]);
     case SET_MACRO_BANG:
-      if (!args[0] instanceof Symbol) {
-        throw Error(`set-macro! must receive a symbol but got ${show(args[0])}`)
-      }
-      e.set(args[0], Macro(args[0]));
-      notify(`defined macro: ${show(args[0])}`);
-      return null;
+      return List.from([SET_MACRO_BANG, args[0]]);
     default:
       throw Error('invalid special form!');
   }

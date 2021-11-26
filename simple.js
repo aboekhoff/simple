@@ -1,6 +1,6 @@
 const { list, List } = require('./list');
 const { gensym, symbol, isSymbol } = require('./symbol');
-const { show, prn, notify, warn } = require('./printer');
+const { show, prn, notify, warn, withStringPort } = require('./printer');
 const { Reader } = require('./reader');
 const { defaultEnv, expand, macroexpand, quasiquote } = require('./expander');
 const { eval } = require('./interpreter');
@@ -14,6 +14,7 @@ init({
   'expander/expand': expand,
   'expander/macroexpand': macroexpand,
   'expander/quasiquote': quasiquote,
+  'with-string-port': withStringPort,
   eval,
   show,
   prn,

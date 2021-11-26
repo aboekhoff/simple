@@ -1,8 +1,30 @@
 const { isSymbol } = require('./symbol');
 const { MINI_NAME, MINI_SHOW } = require('./constants');
+const { RT } = require('./runtime');
+
+function getOutputPort() {
+  return RT['*out*'];
+}
+
+function setOutputPort(port) {
+  RT['*out*'] = port;
+}
+
+function withStringPort(fn) {
+  const oldPort = getOutputPort();
+  const buf = [];
+  const newPort = { write(str) { buf.push(str) } }
+  setOutputPort(newPort);
+  try {
+    fn();
+    return buf.join('');
+  } finally {
+    setOutputPort(oldPort);
+  }
+}
 
 function write(...xs) {
-  console.log(xs.join(' '));
+  xs.forEach(str => RT['*out*'].write(str));
 }
 
 function show(x) {
@@ -30,20 +52,27 @@ function show(x) {
   return `#<${type}${kvs.length ? ' ' + kvs.map(show).join(' ') : ''}>`;
 };
 
+function pr(...xs) {
+  write(...xs.map(show));
+}
+
 function prn(...xs) {
   write(...xs.map(show));
+  write("\n");
 }
 
 function warn(...xs) {
   write("\u001b[31m");
-  prn(...xs);
+  pr(...xs);
   write("\u001b[0m");
+  prn();
 }  
 
 function notify(...xs) {
   write("\u001b[32m");
-  prn(...xs)
+  pr(...xs);
   write("\u001b[0m");
+  prn();
 }
 
-module.exports = { show, prn, warn, notify };
+module.exports = { show, prn, warn, notify, getOutputPort, setOutputPort, withStringPort };

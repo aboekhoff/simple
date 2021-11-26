@@ -1,6 +1,7 @@
 const { List, isList } = require('./list');
 const { RT } = require('./runtime');
 const { symbol, isSymbol } = require('./symbol');
+const { Macro } = require('./macro');
 const {
   MINI_FN,
   MINI_NAME,
@@ -13,7 +14,7 @@ const {
   IF, 
   QUOTE,
   DEFINE_STAR,
-  ARRAY,
+  SET_MACRO_BANG,
 } = require('./constants');
 const { prn, warn, notify, show } = require('./printer');
 const { SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS } = require('constants');
@@ -107,6 +108,9 @@ function _eval(sexp, env = RT['*runtime*']) {
         continue loop;
       case FN_STAR:
         return makeFunction(tail, env);
+      case SET_MACRO_BANG:
+        RT['*env*'].set(tail[0], Macro(tail[0]));
+        return null;
       case QUOTE:
         return tail[0];
       default:
