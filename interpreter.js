@@ -1,6 +1,7 @@
 const { List, isList } = require('./list');
 const { RT } = require('./runtime');
-const { symbol, isSymbol } = require('./symbol');
+const { isSymbol } = require('./symbol');
+const { isKeyword } = require('./keyword');
 const { Macro } = require('./macro');
 const {
   MINI_FN,
@@ -108,9 +109,7 @@ function eval(sexp, env = defaultEnv()) {
 
 function _eval(sexp, env = defaultEnv()) {
   loop:for(;;) {
-    // quick and dirty keywords based on making
-    // symbols that start with ':' evaluate to themselves
-    if (isSymbol(sexp) && sexp.name[0] === ':') {
+    if (isKeyword(sexp) && sexp.name[0] === ':') {
       return sexp;
     }
 

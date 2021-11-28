@@ -1,5 +1,6 @@
 const { list, List } = require('./list');
 const { gensym, symbol, isSymbol } = require('./symbol');
+const { keyword, isKeyword } = require('./keyword');
 const { show, notify, warn, pr, prn, print, printstr, println, prstr, str, withStringPort } = require('./printer');
 const { Reader } = require('./reader');
 const { defaultEnv, expand, macroexpand, quasiquote } = require('./expander');
@@ -18,6 +19,8 @@ init({
   'expander/macroexpand': macroexpand,
   'expander/quasiquote': quasiquote,
   'with-output-string': withStringPort,
+  keyword,
+  'keyword?': isKeyword,
   eval,
   show,
   pr,
@@ -130,6 +133,7 @@ init({
     }
     return true;
   },
+  symbol,
   gensym,
   'load-file': loadFile,
 });

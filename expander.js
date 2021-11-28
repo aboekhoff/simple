@@ -175,10 +175,13 @@ function expand(t, e = RT['*env*']) {
 }
 
 function parseFnParams([...params]) {
+  console.log("PARSE FN PARAMS");
   const _params = [];
   let restparam = null;
   for (let i = 0; i < params.length; i++) {
     const p = params[i];
+    console.log(REST_SENTINEL);
+    console.log(p);
     if (p === REST_SENTINEL) {
       restparam = params[i+1];
       break;

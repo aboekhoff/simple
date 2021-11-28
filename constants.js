@@ -1,4 +1,5 @@
-const { symbol, gensym } = require('./symbol');
+const { symbol } = require('./symbol');
+const { keyword } = require('./keyword');
 const MINI_SHOW = Symbol('mini=show');
 const MINI_FN = Symbol('mini-fn');
 const MINI_ENV = Symbol('mini-env');
@@ -24,7 +25,7 @@ const AGET = symbol('aget');
 const ASET = symbol('aset');
 const LIST = symbol('list');
 const CONCAT = symbol('concat');
-const REST_SENTINEL = symbol(':');
+const REST_SENTINEL = keyword('');
 const ARRAY = symbol('->array');
 const THROW = symbol('throw');
 const DOT = symbol('.');
@@ -60,4 +61,5 @@ module.exports = {
   THROW,
   DOT,
   SET_BANG,
+  LETREC,
 }

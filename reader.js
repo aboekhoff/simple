@@ -1,5 +1,6 @@
 const { symbol } = require('./symbol');
 const { List, list } = require('./list');
+const { keyword } = require('./keyword');
 const { QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING } = require('./constants');
 const NIL = '#nil';
 const VOID = '#void';
@@ -196,6 +197,10 @@ class Reader {
       chars.push(this.pop());
     }
     const string = chars.join('');
+
+    if (string[0] === ':') {
+      return keyword('');
+    }
 
     if (string === TRUE) {
       return true;
