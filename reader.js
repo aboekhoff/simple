@@ -1,6 +1,6 @@
 const { symbol } = require('./symbol');
 const { List, list } = require('./list');
-const { LIST, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING } = require('./constants');
+const { QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING } = require('./constants');
 const NIL = '#nil';
 const VOID = '#void';
 const TRUE = '#t';

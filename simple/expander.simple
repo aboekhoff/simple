@@ -1,0 +1,167 @@
+(load-file "simple/core.simple")
+
+(define (resolve env sym) (or (. env 'get sym) sym))
+(define (extend env) (dict env))
+(define (bind env sym) 
+  (let (sym* (gensym (str "local$" sym)))
+    (. env 'set sym sym*)
+    sym*))
+(define (macro? expr env) #f)
+(define (macroexpand1 expr env) expr)
+(define (macroexpand expr env)
+  (if (and (list? expr) (macro? (first expr) env)) 
+    (macroexpand (macroexpand1 expr env))
+    expr))
+
+(define (flatten-body body env)
+  (match body
+    () ()
+
+    (x : xs)
+    (match (macroexpand x env)
+      ('do : ys)
+      (flatten-body (concat ys xs) env)
+
+      expr 
+      (cons expr (flatten-body xs env)))))
+
+(define (expand-top-level expr env)
+  (match (macroexpand expr env)
+    ('do : xs)
+    [(expand (first xs) env) (rest xs)]
+
+    ('define* name val)
+    [`(define* ~name ~(expand val env)) ()]
+
+    expr
+    [(expand expr env) ()]))
+
+(define (expand expr env)
+  (match (macroexpand expr env)
+    ('do : exprs)
+    `(do ~@(map (fn (x) (macroexpand x env)) (flatten-body exprs env))) 
+    
+    ('let* bindings : body)
+    (expand-let* bindings body env)
+    
+    ('let (: bindings) : body)
+    (expand-let bindings body env)
+
+    ('let label (: bindings) : body)
+    (expand-named-let label bindings body env)
+
+    ('letrec (: bindings) : body)
+    (expand-letrec bindings body env)
+
+    ('fn params : body)
+    (expand-fn params body env)
+
+    ('fn* params restparam : body)
+    (expand-fn params restparams body env)
+
+    ('if test then else)
+    `(if ~(expand test env) ~(expand then env) ~(expand else env))
+
+    ('throw err)
+    `(throw ~(expand err env))
+
+    ('quote x)
+    `(quote ~x)
+
+    (f : xs)
+    (map (fn (x) (expand x env)) expr)
+
+    _
+    (cond
+      (symbol? expr) (resolve env expr)
+      (array? expr)  (map (fn (x) (expand x env)) expr) 
+      :else          expr)))
+
+(define (collect-defines exprs env)
+  (collect-defines* (flatten-body exprs env) '()))
+
+(define (collect-defines* exprs out)
+  (match exprs
+    (('define* name expr) : more)
+    (collect-defines* more (cons expr (cons name out)))
+
+    _
+    (do
+      (list exprs (reverse out)))))
+
+(define (expand-body body env)
+  (match (collect-defines body env)
+    (exprs defs)
+    (if (empty? defs)
+      (expand-body* exprs env)
+      (expand-letrec defs exprs env))))
+
+(define (expand-body* exprs env)
+  (define exprs* (map (fn (x) (expand x env)) exprs))
+  (if (empty? (rest exprs*))
+    (first exprs*)
+    `(do ~@exprs*)))
+
+(define (expand-let* bindings body env)
+  (match bindings
+    () 
+    (expand-body body env)
+    
+    (x y : more)
+    (let* (y* (expand y env)
+           x* (bind env x))
+      `(let (~x* ~y*)
+        ~(expand-let* more body env)))))
+
+(define (expand-fn params body env)
+  (define restparam #nil)
+  (define (set-restparam! val)
+    (set! restparam val))
+  (define (parse-params params)
+    (match params
+      ()       ()
+      (': x)   (do (set-restparam! x) ())
+      (x : xs) (cons x (parse-params xs))))
+  (define pparams (parse-params params))
+  (define env* (extend env))
+  (define pparams* (map (fn (x) (bind env* x)) pparams))
+  `(fn* ~pparams* ~restparam ~(expand-body body env*)))
+    
+
+(define (expand-fn* params restparam body env)
+  (define env* (extend env))
+  (define params* (map (fn (x) (bind env* x)) params))
+  (define restparam* (when restparam (bind env* restparam)))
+  `(fn* ~params ~restparam* ~(expand-body body env*)))
+
+(define (expand-let bindings body env)
+  (define pairs (partition 2 bindings))
+  (define names (map first pairs))
+  (define exprs (map second pairs))
+  (define exprs* (map (fn (x) (expand x env)) exprs))
+  (define env* (extend env))
+  (define names* (map (fn (x) (bind env* x)) names))
+  (define bindings* (interleave names* exprs*))
+  `(let ~bindings* ~(expand-body body env*)))
+
+(define (expand-named-let label bindings body env)
+  (define pairs (partition 2 bindings))
+  (define names (map first pairs))
+  (define exprs (map second pairs))
+  (define exprs* (map (fn (x) (expand x env)) exprs))
+  (define names* (map (fn (x) (bind env x)) names))
+  (define label (bind env label))
+  `(do
+    (define* ~label (fn* ~names* #nil ~(expand-body body env)))
+    (~label ~@exprs*)))
+
+(define (expand-letrec bindings body env)
+  (define pairs (partition 2 bindings))
+  (define names (map first pairs))
+  (define names* (map (fn (x) (bind env x)) names))
+  (define env* (extend env))
+  (for-each (fn (name) (bind env* name)) names)
+  (define exprs (map second pairs))
+  (define exprs* (map (fn (x) (expand x env)) exprs))
+  `(letrec ~(interleave names* exprs*)
+    ~(expand-body body env)))

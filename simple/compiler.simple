@@ -1,0 +1,212 @@
+(load-file "simple/core.simple")
+
+(define (atomic? x)
+  (not (or (list? x) (array? x))))
+
+(define (normalize-term m) 
+  (normalize m identity))
+
+(define (normalize-name m k)
+  (normalize m (fn (n)
+    (if (atomic? n)
+      (k n)
+      (let (t (gensym "local$"))
+        `(let (~t ~n) ~(k t)))))))
+
+(define (normalize-name* m* k)
+  (if (empty? m*)
+    (k ())
+    (normalize-name (first m*) (fn (t)
+      (normalize-name* (rest m*) (fn (t*)
+        (k (cons t t*))))))))
+
+(define (normalize m k)
+  (match m
+    ('fn* params restparam body)
+    (k `(fn* ~params ~restparam ~(normalize-term body)))
+ 
+    (('fn* () #nil : body))
+    (normalize `(do ~@body) k)
+
+    (('fn* () restparam : body) : args)
+    (normalize-name* args (fn (args*)
+      `(let (~restparam (list ~@args*))
+        ~(normalize `(do ~@body) k))))
+    
+    (('fn* (x : xs) restparam : body) arg : args)
+    (normalize-name arg (fn (n)
+      `(let (~x ~n)
+        ~(normalize `((fn* ~xs ~restparam ~@body) ~@args) k))))
+
+    ('let () expr) 
+    (normalize expr k)
+
+    ('let (x exp1 : more) exp2)
+    (normalize exp1 (fn (t)
+      `(let (~x ~t) ~(normalize `(let ~more ~exp2) k))))
+
+    ('if test then else)
+    (normalize-name test (fn (t)
+      (k `(if ~t ~(normalize-term then) ~(normalize-term else)))))
+
+    ('do x)
+    (k (normalize-term x))
+
+    ('do x : xs)
+    (normalize-name x (fn (t)
+      `(do
+        ~(normalize `(do ~@xs) k))))
+
+    ('quote x)
+    (normalize-name x (fn (t)
+      (k t)))
+
+    ('define* name expr)
+    (normalize expr (fn (t)
+      (k `(define* ~name ~t))))
+
+    (f : xs)
+    (normalize-name f (fn (f*)
+      (normalize-name* xs (fn (xs*)
+        (k `(~f* ~@xs*))))))
+    v (k v)))
+
+(define (directify t)
+  (directify* t identity))
+
+;; condenses all codepaths into basic blocks
+(define (directify* t k)
+  (match t
+    ('do)        
+    (list (k #nil))  
+    
+    ('do x)      
+    (directify* x k)
+    
+    ('do x : xs) 
+    (concat 
+      (directify x)
+      (directify* `(do ~@xs) k))
+
+    ('define* x y)
+    (directify* y (fn (y*) `(set! ~x ~y*)))
+
+    ('let (x y) in)
+    (concat
+      (directify* y (fn (y*) `(set! ~x ~y*)))
+      (directify* in k))
+
+    ('set! x y)
+    (list t (k x))
+
+    ('if a b c)
+    (list `(if ~a ~(directify* b k) ~(directify* c k)))
+    
+    ('fn* params restparam body)
+    (list (k `(fn* ~params ~restparam ~(directify* body (fn (x) `(#return ~x))))))
+
+    _
+    (list (k t))))
+
+(define (emit-program p)
+  (with-output-string (fn () (emit-block p))))
+
+(define *indent-level* 0)
+(define *indent-unit* "  ")
+(define (indent!) (set! *indent-level* (inc *indent-level*)))
+(define (dedent!) (set! *indent-level* (dec *indent-level*)))
+
+(define (tab)
+  (define (tab* i)
+    (when (< i *indent-level*)
+      (print *indent-unit*)
+      (tab* (inc i))))
+  (tab* 0))
+
+(define (emit-block ts)
+  (print "{\n")
+  (indent!)
+  (for-each (fn (t) (tab) (emit t) (print "\n")) ts)
+  (dedent!)
+  (tab) 
+  (print "}"))
+
+(define (emit-params params restparam)
+  (print "(")
+  (match [params restparam]
+    [() #nil] #f
+
+    [() rp]    
+    (do (print "...") (emit rp))
+
+    [(p : ps) #nil]
+    (do
+      (emit p)
+      (for-each (fn (p) (print ", ") (emit p)) ps))
+
+    [(p : ps) rp]
+    (do
+      (emit p)
+      (for-each (fn (p) (print ", ") (emit p)) ps)
+      (print ", ...")
+      (emit rp)))
+  (print ")"))
+
+(define (emit-symbol t)
+  (define s (str t))
+  (if (or 
+        (. s 'startsWith "js/") 
+        (. s 'startsWith "local$"))
+    (print t)
+    (do 
+      (print "RT['")
+      (print s)
+      (print "']"))))
+
+(define (emit t)
+  (match t
+    ('set! x y)
+    (do 
+      (emit x)
+      (print " = ")
+      (emit y))
+    
+    ('#return x)
+    (do
+      (print "return ")
+      (emit x))
+
+    ('if x y z)
+    (do
+      (print "if (")
+      (emit x)
+      (print " != null && ")
+      (emit x)
+      (print " !== false) ")
+      (emit-block y)
+      (print " else ")
+      (emit-block z))
+
+    ('fn* params restparam body)
+    (do
+      (print "function ")
+      (emit-params params restparam)
+      (print " ")
+      (emit-block body))
+
+    (f : xs)
+    (do
+      (emit f)
+      (emit-params xs #nil))
+
+    t
+    (if (symbol? t) (emit-symbol t) (pr t))))
+
+(define (detonate js)
+  (println js)
+  (define warhead (js/Function "RT" js))
+  (warhead *runtime*))
+
+(define (compile-and-evaluate code env)
+  (-> code (expand env) normalize-term directify emit-program detonate))
+

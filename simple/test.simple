@@ -1,0 +1,11 @@
+(load-file "simple/core.simple")
+
+(define *current-test* :default)
+
+(define-macro (assert form)
+  `(let (expr* '~form
+         res   ~form)
+    (if res
+      (notify expr*)
+      (do
+        (warn expr*)))))

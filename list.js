@@ -115,5 +115,5 @@ function isList(xs) {
 }
 
 module.exports = {
-  List, list, isList,
+  List, FullList, EmptyList, list, isList,
 };

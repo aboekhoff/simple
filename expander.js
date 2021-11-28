@@ -22,6 +22,8 @@ const {
   SET_MACRO_BANG,
   REST_SENTINEL,
   ARRAY,
+  THROW,
+  SET_BANG,
 } = require('./constants');
 
 const SPECIAL_FORMS = [
@@ -31,6 +33,8 @@ const SPECIAL_FORMS = [
   FN_STAR,
   DEFINE_STAR,
   SET_MACRO_BANG,
+  THROW,
+  SET_BANG,
 ];
 
 // built in macros and special-form designations
@@ -201,6 +205,10 @@ function expandSpecialForm(specialForm, [...args], e) {
       return List.from([FN_STAR, args[0], args[1], expand(List.from([DO, ...args.slice(2)]), e)]);
     case QUOTE:
       return List.from([QUOTE, args[0]]);
+    case THROW:
+      return List.from([THROW, args[0]]);
+    case SET_BANG:
+      return List.from([SET_BANG, args[0], expand(args[1], e)]);
     case DEFINE_STAR:
       return List.from([DEFINE_STAR, args[0], expand(args[1], e)]);
     case SET_MACRO_BANG:

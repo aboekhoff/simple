@@ -12,6 +12,7 @@ const DO = symbol('do');
 const IF = symbol('if');
 const LET = symbol('let');
 const LET_STAR = symbol('let*');
+const LETREC = symbol('letrec');
 const QUASIQUOTE = symbol('quasiquote');
 const QUOTE = symbol('quote');
 const UNQUOTE = symbol('unquote');
@@ -25,6 +26,9 @@ const LIST = symbol('list');
 const CONCAT = symbol('concat');
 const REST_SENTINEL = symbol(':');
 const ARRAY = symbol('->array');
+const THROW = symbol('throw');
+const DOT = symbol('.');
+const SET_BANG = symbol('set!');
 
 module.exports = {
   REST_SENTINEL,
@@ -53,4 +57,7 @@ module.exports = {
   LIST,
   CONCAT,
   ARRAY,
+  THROW,
+  DOT,
+  SET_BANG,
 }

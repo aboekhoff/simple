@@ -15,13 +15,58 @@ const {
   QUOTE,
   DEFINE_STAR,
   SET_MACRO_BANG,
+  THROW,
+  SET_BANG,
 } = require('./constants');
+
+class Env {
+  static create(root) {
+    return new Env([root]);
+  }
+
+  constructor(ribs) {
+    this.ribs = ribs;
+  }
+
+  bind(sym, val) {
+    this.ribs[0][sym] = val;
+  }
+
+  extend() {
+    return new Env([{}, ...this.ribs]);
+  }
+
+  get(key) {
+    for (let i = 0; i < this.ribs.length; i++) {
+      const rib = this.ribs[i];
+      const _key = key.toString();
+      if (_key in rib) {
+        return rib[_key];
+      }
+    }
+  }
+
+  set(key, val) {
+    for (let i = 0; i < this.ribs.length; i++) {
+      const rib = this.ribs[i];
+      const _key = key.toString();
+      if (_key in rib) {
+        rib[_key] = val;
+        return;
+      }
+    }
+    throw Error('cannot set undefined symbol \'' + _key);
+  }
+}
+
+function defaultEnv() {
+  return Env.create(RT['*runtime*']);
+}
+
 const { prn, warn, notify, show } = require('./printer');
-const { SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS } = require('constants');
 
 function makeFunction([params, restparam, body], env) {
   params = Array.from(params);
-  // const checkArity = makeArityChecker(params, restparam);
   const minifn = function(...args) {
     const _env = bindArgs(env, params, restparam, args);
     return eval(body, _env);
@@ -39,19 +84,19 @@ function bindArgs(env, params, restparam, args) {
     throw Error(`required ${params.length} args but got ${args.length}`);
   }
 
-  const _env = Object.create(env);
+  const _env = env.extend()
   let i = 0;
   while (i < params.length) {
-    _env[params[i]] = args[i];
+    _env.bind(params[i], args[i]);
     i++;
   }
   if (restparam) {
-    _env[restparam] = List.from(args.slice(i));
+    _env.bind(restparam, List.from(args.slice(i)));
   }
   return _env;
 }
 
-function eval(sexp, env = RT['*runtime*']) {
+function eval(sexp, env = defaultEnv()) {
   try {
     return _eval(sexp, env);
   } catch (e) {
@@ -61,7 +106,7 @@ function eval(sexp, env = RT['*runtime*']) {
   }
 }
 
-function _eval(sexp, env = RT['*runtime*']) {
+function _eval(sexp, env = defaultEnv()) {
   loop:for(;;) {
     // quick and dirty keywords based on making
     // symbols that start with ':' evaluate to themselves
@@ -70,7 +115,7 @@ function _eval(sexp, env = RT['*runtime*']) {
     }
 
     if (isSymbol(sexp)) {
-      return env[sexp];
+      return env.get(sexp);
     }
 
     if (Array.isArray(sexp)) {
@@ -89,7 +134,7 @@ function _eval(sexp, env = RT['*runtime*']) {
         if (typeof val == 'function') {
           val[MINI_NAME] = name;
         }
-        env[name] = val;
+        env.bind(name, val);
         return val;
       case DO:
         const len = tail.length - 1;
@@ -113,6 +158,13 @@ function _eval(sexp, env = RT['*runtime*']) {
         return null;
       case QUOTE:
         return tail[0];
+      case THROW:
+        throw tail[0];
+      case SET_BANG:
+        const key = tail[0];
+        const _val = eval(tail[1], env);
+        env.set(key, _val);
+        return;
       default:
         if (sexp.isEmpty()) {
           return sexp;

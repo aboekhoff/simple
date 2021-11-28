@@ -32,7 +32,7 @@ function symbol(name) {
 }
 
 function gensym(name) {
-  return new Symbol(name + ':' + nextInt());
+  return new Symbol(name + '_' + nextInt());
 }
 
 module.exports = {

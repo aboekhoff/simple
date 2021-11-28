@@ -61,7 +61,10 @@ function pr(...xs) {
 }
 
 function print(...xs) {
+  let first = true;
   for (x of xs) {
+    if (!first) { write(' ') }
+    first = false;
     if (typeof x === 'string') {
       write(x)
     } else {
@@ -70,12 +73,21 @@ function print(...xs) {
   }
 }
 
-function printstr(...xs) {
-  return withStringPort(() => print(...xs));
+function str(...xs) {
+  return withStringPort(() => {
+    for (x of xs) {
+      print(x);
+    }
+  });
 }
 
 function prn(...xs) {
-  write(...xs.map(show));
+  write(...xs.map(show).join(' '));
+  write("\n");
+}
+
+function println(...xs) {
+  print(...xs);
   write("\n");
 }
 
@@ -96,10 +108,11 @@ function notify(...xs) {
 module.exports = { 
   show, 
   prstr, 
+  str,
   pr, 
   prn, 
   print, 
-  printstr,
+  println,
   warn, 
   notify, 
   getOutputPort, 

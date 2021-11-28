@@ -17,6 +17,9 @@
 (define-macro (when test : body)
   `(if ~test (do ~@body) #nil))
 
+(define-macro (when-not test : body)
+  `(if ~test #nil (do ~@body)))
+
 (define-macro (debug _ form)
   (define ?res (gensym "res"))
   `(do
@@ -60,7 +63,6 @@
 (define (not-empty? xs) (not (empty? xs)))
 (define (sentinel? x) (== x :))
 (define (quote? x) (and (list? x) (== 'quote (first x))))
-
 (define (any? pred seq)
   (if (empty? seq) 
     #f 
@@ -164,160 +166,13 @@
 (define-macro (match in : patterns)
   (match-patterns patterns in))
 
-(define (atomic? x)
-  (not (or (list? x) (array? x))))
+(define-macro (-> : forms)
+  (match forms
+    () #nil
+    (x) x
 
-(define (normalize-term m) 
-  (normalize m identity))
-
-(define (normalize-name m k)
-  (normalize m (fn (n)
-    (if (atomic? n)
-      (k n)
-      (let (t (gensym "t"))
-        `(let (~t ~n) ~(k t)))))))
-
-(define (normalize-name* m* k)
-  (if (empty? m*)
-    (k ())
-    (normalize-name (first m*) (fn (t)
-      (normalize-name* (rest m*) (fn (t*)
-        (k (cons t t*))))))))
-
-(define (normalize m k)
-  (match m
-    ('fn* params restparam body)
-    (k `(fn* ~params ~restparam ~(normalize-term body)))
- 
-    (('fn* () #nil : body))
-    (normalize `(do ~@body) k)
-
-    (('fn* () restparam : body) : args)
-    (normalize-name* args (fn (args*)
-      `(let (~restparam (list ~@args*))
-        ~(normalize `(do ~@body) k))))
+    (x (y : ys) : more) 
+    `(-> (~y ~x ~@ys) ~@more)
     
-    (('fn* (x : xs) restparam : body) arg : args)
-    (normalize-name arg (fn (n)
-      `(let (~x ~n)
-        ~(normalize `((fn* ~xs ~restparam ~@body) ~@args) k))))
-
-    ('if test then else)
-    (normalize-name test (fn (t)
-      (k `(if ~t ~(normalize-term then) ~(normalize-term else)))))
-
-    ('do ('do : xs) : ys)
-    (normalize `(do ~@xs ~@ys) k)
-
-    ('do x)
-    (k (normalize-term x))
-
-    ('do x : xs)
-    (normalize-name x (fn (_)
-      (normalize `(do ~@xs) k)))
-
-    ('quote x)
-    (normalize-name x (fn (t)
-      (k t)))
-
-    ('define* name expr)
-    (k `(define* ~name ~(normalize-term expr)))
-
-    (f : xs)
-    (normalize-name f (fn (f*)
-      (normalize-name* xs (fn (xs*)
-        (k `(~f* ~@xs*))))))
-
-    v (k v)))
-
-(define (directify-term term)
-  (directify term '()))
-
-(define (directify term out)
-  (match term
-    ('let (name expr) in)
-    (cons [:set! name (first (directify-term expr))] (directify in out))
-    
-    ('fn* params restparam body)
-    (let (ret (gensym "ret"))
-      (cons 
-        [:fn params restparam (directify `(let (ret ~body) ret) (list [:return 'ret]))] 
-        out))
-
-    ('define* name expr)
-    (cons [:set! name expr] out)
-
-    ('do x)
-    (directify x out)
-
-    ('do x : xs)
-    (directify x (directify `(do ~@xs) out))
-
-    (f : xs)
-    (cons [:app f xs] out)
-
-    _ out))
-
-(define (emit term)
-  (with-string-port (fn () (emit* term))))
-
-(define/match emit*
-  () #nil
-
-  (term : terms)
-  (do
-    (emit* term)
-    (emit* terms))
-
-  [':fn params restparam body]
-  (do
-    (print "function (")
-    (print (str/join "," params))
-    (print ") {\n")
-    (emit* body)
-    (print "\n}"))
-
-  [':set! x y]
-  (do
-    (emit* x)
-    (print " = ")
-    (emit* y)
-    (print ";\n"))
-
-  [':app f args]
-  (do
-    (emit* f)
-    (print "(")
-    (print (str/join ", " args))
-    (print ")"))
-
-  [':return x]
-  (do
-    (print "return ")
-    (emit* x)
-    (print ";"))
-
-  any
-  (print any))
-
-(define (test form)
-  @(debug)
-  (define normalized (normalize-term form))
-  @(debug)
-  (define directified (directify-term normalized))
-  @(debug)
-  (define emitted (emit directified)))
-
-(test '(f (g (if z 1 2) y)))
-(test '((fn* () #nil :woot)))
-(test '((fn* (x) #nil x) :woot))
-(test '((fn* (x y) foo (* x y)) 1 2 3 4 5))
-(test '(do (do (do (prn :woot)))))
-(test '(define* x 42))
-(test '(fn* (x) #nil (* x x)))
-
-@(debug)
-(prstr '(a b c))
-
-@(debug)
-(emit [:app 'f '(a b c)])
+    (x y : more) 
+    `(-> (~y ~x) ~@more)))
